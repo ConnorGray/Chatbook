@@ -76,15 +76,17 @@ Delimiters -> "%%" ];
 (* ::Subsubsection::Closed:: *)
 (*Fill-in-the-Middle Completions*)
 $wlFIM                 = False;
-$wlFIMService          = "Ollama";
-$wlFIMModel            = "deepseek-coder-v2";
+$wlFIMService          = "MistralAI";
+$wlFIMModel            = "codestral-2501";
+$wlFIMRequest          = "v1/fim/completions";
 $wlFIMAuthentication   = Automatic;
 $wlFIMTemperature      = 0.7;
-$wlFIMSuggestionsCount = 1;
+$wlFIMSuggestionsCount = 3;
 
 $wlFIMOptions = <|
-    "num_predict" -> $wlSuggestionsMaxTokens,
-    "stop"        -> { "\n\n" },
+    "max_tokens"  -> $wlSuggestionsMaxTokens,
+    "n"           -> $wlFIMSuggestionsCount,
+    "stop"        -> { "Out[" },
     "temperature" -> $wlFIMTemperature
 |>;
 
@@ -573,14 +575,14 @@ executeWLSuggestions0 // endDefinition;
 executeWLSuggestionsFIM // beginDefinition;
 
 executeWLSuggestionsFIM[ as_Association ] := Enclose[
-    Module[ { instructions, context, docs, before, after, prompt, suffix, responses, strings },
+    Module[ { instructions, context, docs, before, after, prompt, suffix, response, strings },
 
         instructions = ConfirmBy[ as[ "Instructions"         ], StringQ, "Instructions" ];
         context      = ConfirmBy[ as[ "Context"              ], StringQ, "Context"      ];
         docs         = ConfirmBy[ as[ "RelatedDocumentation" ], StringQ, "RelatedDocs"  ];
 
         { before, after } = ConfirmMatch[
-            StringSplit[ context, $wlPlaceholderString ],
+            Replace[ StringSplit[ context, $wlPlaceholderString ], { s_String } :> { s, "" } ],
             { _String, _String },
             "Split"
         ];
@@ -588,29 +590,26 @@ executeWLSuggestionsFIM[ as_Association ] := Enclose[
         prompt = ConfirmBy[ instructions<>"\n\n\n"<>before, StringQ, "Prompt" ];
         suffix = ConfirmBy[ after<>"\n\n\n"<>docs, StringQ, "Suffix" ];
 
-        responses = ConfirmMatch[
+        response = ConfirmMatch[
             setServiceCaller[
-                Table[
-                    LogChatTiming @ suggestionServiceExecute[
-                        $wlFIMService,
-                        "RawCompletion",
-                        DeleteMissing @ <|
-                            "model"   -> $wlFIMModel,
-                            "prompt"  -> prompt,
-                            "suffix"  -> suffix,
-                            "stream"  -> False,
-                            "options" -> $wlFIMOptions
-                        |>
-                    ],
-                    $wlFIMSuggestionsCount
+                LogChatTiming @ suggestionServiceExecute[
+                    $wlFIMService,
+                    $wlFIMRequest,
+                    DeleteMissing @ <|
+                        "model"   -> $wlFIMModel,
+                        "prompt"  -> prompt,
+                        "suffix"  -> suffix,
+                        "stream"  -> False,
+                        $wlFIMOptions
+                    |>
                 ],
                 "WLSuggestions"
             ],
-            { __Association },
-            "Responses"
+            _Association,
+            "Response"
         ];
 
-        strings = ConfirmMatch[ #[ "response" ] & /@ responses, { __String }, "Strings" ];
+        strings = ConfirmMatch[ getFIMSuggestions @ response, { __String }, "Strings" ];
 
         <| "Content" -> strings |>
     ],
@@ -618,6 +617,16 @@ executeWLSuggestionsFIM[ as_Association ] := Enclose[
 ];
 
 executeWLSuggestionsFIM // endDefinition;
+
+(* ::**************************************************************************************************************:: *)
+(* ::Subsubsection::Closed:: *)
+(*getFIMSuggestions*)
+getFIMSuggestions // beginDefinition;
+getFIMSuggestions[ KeyValuePattern[ "choices"|"response" -> response_ ] ] := getFIMSuggestions @ response;
+getFIMSuggestions[ KeyValuePattern[ "content"|"message" -> response_ ] ] := getFIMSuggestions @ response;
+getFIMSuggestions[ responses_List ] := getFIMSuggestions /@ responses;
+getFIMSuggestions[ response_String ] := response;
+getFIMSuggestions // endDefinition;
 
 (* ::**************************************************************************************************************:: *)
 (* ::Subsubsection::Closed:: *)
